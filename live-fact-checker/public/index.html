@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Live Fact-Checker</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header>
+      <div class="title">
+        <span class="dot" id="dot"></span>
+        <h1>Live Fact-Checker</h1>
+      </div>
+      <div class="controls">
+        <button id="toggle">Start listening</button>
+        <button id="clear" class="ghost">Clear</button>
+        <span id="status" class="status idle">Idle</span>
+      </div>
+    </header>
+
+    <main>
+      <section class="pane transcript-pane">
+        <h2>Transcript</h2>
+        <div id="transcript" class="scroll"></div>
+      </section>
+      <section class="pane checks-pane">
+        <h2>Fact checks</h2>
+        <div id="checks" class="scroll"></div>
+      </section>
+    </main>
+
+    <footer>
+      <span>Mic input via your browser. Open in Chrome or Edge.</span>
+      <span id="hint"></span>
+    </footer>
+
+    <script src="app.js"></script>
+  </body>
+</html>
