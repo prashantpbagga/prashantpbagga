@@ -3,6 +3,7 @@ import json
 import os
 from typing import Literal
 
+import anthropic
 import websockets
 from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -19,6 +20,7 @@ DEEPGRAM_URL = (
 )
 
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
 app = FastAPI(title="live-fact-check", version="0.1.0")
 
@@ -31,6 +33,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+FACT_CHECK_SYSTEM = (
+    "You are an expert fact-checker. Given a claim and web search results, "
+    "analyze the evidence and return a JSON object with exactly these fields:\n"
+    '- "verdict": one of "true", "false", "mixed", or "unverified"\n'
+    '- "confidence": a float between 0.0 and 1.0\n'
+    '- "explanation": 2-4 sentences grounded only in the provided sources\n\n'
+    "Base your verdict solely on the search results provided. If the results are "
+    "insufficient or conflicting, use \"mixed\" or \"unverified\" accordingly."
+)
 
 Verdict = Literal["true", "false", "mixed", "unverified"]
 
@@ -52,39 +63,77 @@ class CheckResponse(BaseModel):
     sources: list[Source]
 
 
-def _derive_verdict(claim: str, results: list[dict]) -> tuple[Verdict, float, str]:
-    """
-    Simple heuristic: look for contradiction/confirmation signals in result
-    content. Replace with an LLM call for higher accuracy.
-    """
-    claim_lower = claim.lower()
-    content_all = " ".join(r.get("content", "") for r in results).lower()
+async def _claude_verdict(claim: str, results: list[dict]) -> tuple[Verdict, float, str]:
+    client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
 
+    search_context = "\n\n".join(
+        f"Title: {r.get('title', '')}\nURL: {r.get('url', '')}\n"
+        f"Content: {r.get('content', '')[:800]}"
+        for r in results
+    )
+
+    response = await client.messages.create(
+        model="claude-opus-4-7",
+        max_tokens=1024,
+        thinking={"type": "adaptive"},
+        system=[
+            {
+                "type": "text",
+                "text": FACT_CHECK_SYSTEM,
+                "cache_control": {"type": "ephemeral"},
+            }
+        ],
+        output_config={
+            "format": {
+                "type": "json_schema",
+                "name": "fact_check_result",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "verdict": {
+                            "type": "string",
+                            "enum": ["true", "false", "mixed", "unverified"],
+                        },
+                        "confidence": {"type": "number"},
+                        "explanation": {"type": "string"},
+                    },
+                    "required": ["verdict", "confidence", "explanation"],
+                    "additionalProperties": False,
+                },
+            }
+        },
+        messages=[
+            {
+                "role": "user",
+                "content": f"Claim: {claim}\n\nSearch results:\n{search_context}",
+            }
+        ],
+    )
+
+    text = next((b.text for b in response.content if b.type == "text"), "{}")
+    data = json.loads(text)
+    verdict: Verdict = data["verdict"]
+    confidence: float = float(data["confidence"])
+    explanation: str = data["explanation"]
+    return verdict, confidence, explanation
+
+
+def _fallback_verdict(claim: str, results: list[dict]) -> tuple[Verdict, float, str]:
+    """Word-count heuristic used when Anthropic key is absent."""
+    content_all = " ".join(r.get("content", "") for r in results).lower()
     contradiction_words = ["false", "myth", "incorrect", "not true", "debunked", "misleading"]
     confirmation_words = ["true", "correct", "confirmed", "proven", "accurate", "verified"]
-
     contra = sum(content_all.count(w) for w in contradiction_words)
     confirm = sum(content_all.count(w) for w in confirmation_words)
-
     total = contra + confirm
     if total == 0:
         return "unverified", 0.0, "Could not find enough information to assess this claim."
-
     ratio = confirm / total
     if ratio >= 0.65:
-        verdict: Verdict = "true"
-        confidence = round(ratio, 2)
-        explanation = "Sources generally support this claim."
-    elif ratio <= 0.35:
-        verdict = "false"
-        confidence = round(1 - ratio, 2)
-        explanation = "Sources generally contradict this claim."
-    else:
-        verdict = "mixed"
-        confidence = 0.5
-        explanation = "Sources give conflicting signals on this claim."
-
-    return verdict, confidence, explanation
+        return "true", round(ratio, 2), "Sources generally support this claim."
+    if ratio <= 0.35:
+        return "false", round(1 - ratio, 2), "Sources generally contradict this claim."
+    return "mixed", 0.5, "Sources give conflicting signals on this claim."
 
 
 @app.get("/api/health")
@@ -120,11 +169,12 @@ async def check(req: CheckRequest) -> CheckResponse:
         if r.get("url")
     ]
 
-    verdict, confidence, explanation = _derive_verdict(claim, results)
-
-    # Prefer Tavily's own answer summary if available
-    if answer := response.get("answer"):
-        explanation = answer
+    if ANTHROPIC_API_KEY:
+        verdict, confidence, explanation = await _claude_verdict(claim, results)
+    else:
+        verdict, confidence, explanation = _fallback_verdict(claim, results)
+        if answer := response.get("answer"):
+            explanation = answer
 
     return CheckResponse(
         claim=claim,
