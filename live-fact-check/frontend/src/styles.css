@@ -15,9 +15,7 @@ body {
   padding: 2.5rem 1.25rem;
 }
 
-h1 {
-  margin: 0 0 0.25rem;
-}
+h1 { margin: 0 0 0.25rem; }
 
 .subtitle {
   margin: 0 0 1.5rem;
@@ -28,6 +26,10 @@ form {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+}
+
+.textarea-wrap {
+  position: relative;
 }
 
 textarea {
@@ -42,24 +44,54 @@ textarea {
   box-sizing: border-box;
 }
 
+textarea:disabled {
+  border-color: #c0392b44;
+  background: #1e1215;
+}
+
+.rec-dot {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #f87171;
+  animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
 button {
-  align-self: flex-start;
   padding: 0.6rem 1.2rem;
   font: inherit;
-  background: #4f8cff;
-  color: white;
   border: none;
   border-radius: 8px;
   cursor: pointer;
+  background: #4f8cff;
+  color: white;
 }
 
 button:disabled {
-  opacity: 0.5;
+  opacity: 0.4;
   cursor: not-allowed;
 }
 
+.btn-mic { background: #22c55e; }
+.btn-stop { background: #f87171; }
+.btn-clear { background: #374151; }
+
 .error {
-  color: #ff6b6b;
+  color: #f87171;
   margin-top: 1rem;
 }
 
@@ -72,9 +104,7 @@ button:disabled {
   border-radius: 8px;
 }
 
-.result h2 {
-  margin: 0 0 0.25rem;
-}
+.result h2 { margin: 0 0 0.25rem; }
 
 .confidence {
   margin: 0 0 0.75rem;
@@ -82,7 +112,7 @@ button:disabled {
   font-size: 0.875rem;
 }
 
-.verdict-true { border-left-color: #4ade80; }
+.verdict-true  { border-left-color: #4ade80; }
 .verdict-false { border-left-color: #f87171; }
 .verdict-mixed { border-left-color: #facc15; }
 .verdict-unverified { border-left-color: #9aa0a6; }
